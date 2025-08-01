@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import { BookOpen, Heart, ShoppingCart, ExternalLink, PenTool, LogOut, Wallet, Eye, EyeOff } from 'lucide-react';
 import { ethers } from 'ethers';
 import 'react-quill/dist/quill.snow.css';
+import FullPageLoader from '@/components/FullPageLoader';
 
 interface Article {
   id: bigint;
@@ -25,6 +26,8 @@ export default function Articles() {
   const [articleDescriptions, setArticleDescriptions] = useState<{ [id: string]: string }>({});
   const [accessMap, setAccessMap] = useState<{ [id: string]: boolean }>({});
   const [expandedArticles, setExpandedArticles] = useState<{ [id: string]: boolean }>({});
+  const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isTipping, setIsTipping] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -71,29 +74,34 @@ export default function Articles() {
 
   const tipWriter = async (articleId: bigint) => {
     if (!contract) return;
-    
+    setIsTipping(true);
     try {
       const tx = await contract.tipWriter(articleId, { 
         value: ethers.parseEther("0.01") 
       });
-      
+      toast({
+        title: "Sending tip...",
+        description: "Waiting for transaction confirmation.",
+      });
+      await tx.wait();
       toast({
         title: "Tip sent!",
         description: "Your tip of 0.01 ETH has been sent to the author.",
       });
-      
-      await tx.wait();
     } catch (error: any) {
       toast({
         title: "Tip failed",
         description: error.message,
         variant: "destructive",
       });
+    } finally {
+      setIsTipping(false);
     }
   };
 
   const purchaseArticle = async (articleId: bigint, price: bigint) => {
     if (!contract) return;
+    setIsPurchasing(true);
     try {
       const tx = await contract.purchaseArticle(articleId, { value: price });
       toast({
@@ -132,6 +140,8 @@ export default function Articles() {
         description: error.message,
         variant: "destructive",
       });
+    } finally {
+      setIsPurchasing(false);
     }
   };
 
@@ -148,9 +158,7 @@ export default function Articles() {
 
   const viewDescription = async (article: Article) => {
     const articleId = article.id.toString();
-    
     if (articleDescriptions[articleId]) {
-      // Toggle expanded state if already loaded
       setExpandedArticles(prev => ({
         ...prev,
         [articleId]: !prev[articleId]
@@ -169,22 +177,14 @@ export default function Articles() {
     }
   };
 
-  const toggleArticleExpansion = (articleId: string) => {
-    setExpandedArticles(prev => ({
-      ...prev,
-      [articleId]: !prev[articleId]
-    }));
-  };
-
   if (loading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-center">
-          <BookOpen className="h-8 w-8 animate-pulse mx-auto mb-4" />
-          <p>Loading articles...</p>
-        </div>
-      </div>
-    );
+    return <FullPageLoader text="Loading articles..." />;
+  }
+  if (isPurchasing) {
+    return <FullPageLoader text="Processing payment..." />;
+  }
+  if (isTipping) {
+    return <FullPageLoader text="Sending tip..." />;
   }
 
   return (
