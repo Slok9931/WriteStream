@@ -6,8 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useToast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
-import { BookOpen, Heart, ShoppingCart, ExternalLink, PenTool, LogOut, Wallet } from 'lucide-react';
+import { BookOpen, Heart, ShoppingCart, ExternalLink, PenTool, LogOut, Wallet, Eye, EyeOff } from 'lucide-react';
 import { ethers } from 'ethers';
+import 'react-quill/dist/quill.snow.css';
 
 interface Article {
   id: bigint;
@@ -23,6 +24,7 @@ export default function Articles() {
   const [loading, setLoading] = useState(true);
   const [articleDescriptions, setArticleDescriptions] = useState<{ [id: string]: string }>({});
   const [accessMap, setAccessMap] = useState<{ [id: string]: boolean }>({});
+  const [expandedArticles, setExpandedArticles] = useState<{ [id: string]: boolean }>({});
   const { toast } = useToast();
 
   useEffect(() => {
@@ -100,6 +102,12 @@ export default function Articles() {
       });
       await tx.wait();
 
+      // Update access map
+      setAccessMap(prev => ({
+        ...prev,
+        [articleId.toString()]: true
+      }));
+
       // Fetch and show description after purchase
       const article = articles.find(a => a.id === articleId);
       if (article) {
@@ -107,6 +115,10 @@ export default function Articles() {
         setArticleDescriptions((prev) => ({
           ...prev,
           [articleId.toString()]: desc,
+        }));
+        setExpandedArticles(prev => ({
+          ...prev,
+          [articleId.toString()]: true
         }));
       }
     } catch (error: any) {
@@ -119,18 +131,43 @@ export default function Articles() {
   };
 
   async function fetchDescription(ipfsHash: string) {
-    const res = await fetch(`https://ipfs.io/ipfs/${ipfsHash}`);
-    const description = await res.text();
-    return description;
+    try {
+      const res = await fetch(`https://gateway.pinata.cloud/ipfs/${ipfsHash}`);
+      const html = await res.text();
+      return html;
+    } catch (error) {
+      console.error('Failed to fetch description:', error);
+      return 'Failed to load article content.';
+    }
   }
 
-  // Optionally, add a "View Description" button for users who already purchased
   const viewDescription = async (article: Article) => {
-    // You may want to check access on-chain here
-    const desc = await fetchDescription(article.ipfsHash);
-    setArticleDescriptions((prev) => ({
+    const articleId = article.id.toString();
+    
+    if (articleDescriptions[articleId]) {
+      // Toggle expanded state if already loaded
+      setExpandedArticles(prev => ({
+        ...prev,
+        [articleId]: !prev[articleId]
+      }));
+    } else {
+      // Fetch and display
+      const desc = await fetchDescription(article.ipfsHash);
+      setArticleDescriptions((prev) => ({
+        ...prev,
+        [articleId]: desc,
+      }));
+      setExpandedArticles(prev => ({
+        ...prev,
+        [articleId]: true
+      }));
+    }
+  };
+
+  const toggleArticleExpansion = (articleId: string) => {
+    setExpandedArticles(prev => ({
       ...prev,
-      [article.id.toString()]: desc,
+      [articleId]: !prev[articleId]
     }));
   };
 
@@ -148,7 +185,7 @@ export default function Articles() {
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border">
+      <header className="border-b border-border sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-50">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <BookOpen className="h-8 w-8" />
@@ -202,47 +239,53 @@ export default function Articles() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-6">
             {articles.map((article) => {
               const hasAccess = accessMap[article.id.toString()];
+              const articleId = article.id.toString();
+              const isExpanded = expandedArticles[articleId];
+              const hasContent = articleDescriptions[articleId];
+              
               return (
-                <Card key={article.id.toString()} className="flex flex-col">
+                <Card key={articleId} className="overflow-hidden">
                   <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <Badge variant="outline" className="mb-2">
+                    <div className="flex items-start justify-between mb-2">
+                      <Badge variant="outline" className="text-sm font-semibold">
                         {ethers.formatEther(article.price)} ETH
                       </Badge>
+                      {hasAccess && (
+                        <Badge variant="secondary" className="text-xs">
+                          Purchased
+                        </Badge>
+                      )}
                     </div>
-                    <CardTitle className="line-clamp-2">{article.title}</CardTitle>
+                    <CardTitle className="text-xl leading-tight">{article.title}</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      by {article.author.slice(0, 6)}...{article.author.slice(-4)}
+                    </p>
                   </CardHeader>
-                  <CardContent className="flex-1 flex flex-col justify-between">
-                    <div className="mb-4">
-                      <p className="text-sm text-muted-foreground">
-                        by {article.author.slice(0, 6)}...{article.author.slice(-4)}
-                      </p>
-                    </div>
-                    <div className="flex flex-col space-y-2">
-                      <div className="flex space-x-2">
+                  
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => tipWriter(article.id)}
+                      >
+                        <Heart className="mr-2 h-4 w-4" />
+                        Tip 0.01Ξ
+                      </Button>
+                      
+                      {!hasAccess && (
                         <Button
-                          variant="outline"
                           size="sm"
-                          onClick={() => tipWriter(article.id)}
-                          className="flex-1"
+                          onClick={() => purchaseArticle(article.id, article.price)}
                         >
-                          <Heart className="mr-2 h-4 w-4" />
-                          Tip 0.01Ξ
+                          <ShoppingCart className="mr-2 h-4 w-4" />
+                          Buy Article
                         </Button>
-                        {!hasAccess && (
-                          <Button
-                            size="sm"
-                            onClick={() => purchaseArticle(article.id, article.price)}
-                            className="flex-1"
-                          >
-                            <ShoppingCart className="mr-2 h-4 w-4" />
-                            Buy
-                          </Button>
-                        )}
-                      </div>
+                      )}
+                      
                       <Button
                         variant="outline"
                         size="sm"
@@ -252,31 +295,132 @@ export default function Articles() {
                           href={`https://ipfs.io/ipfs/${article.ipfsHash}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="w-full"
                         >
                           <ExternalLink className="mr-2 h-4 w-4" />
                           View on IPFS
                         </a>
                       </Button>
+                      
                       {hasAccess && (
                         <Button
                           variant="outline"
                           size="sm"
                           onClick={() => viewDescription(article)}
                         >
-                          Show Description
+                          {hasContent ? (
+                            isExpanded ? (
+                              <>
+                                <EyeOff className="mr-2 h-4 w-4" />
+                                Hide Content
+                              </>
+                            ) : (
+                              <>
+                                <Eye className="mr-2 h-4 w-4" />
+                                Show Content
+                              </>
+                            )
+                          ) : (
+                            <>
+                              <Eye className="mr-2 h-4 w-4" />
+                              Load Content
+                            </>
+                          )}
                         </Button>
                       )}
                     </div>
+
+                    {/* Article Content with Proper Formatting */}
+                    {hasContent && isExpanded && (
+                      <div className="mt-6 border-t pt-6">
+                        <div className="prose prose-sm dark:prose-invert max-w-none">
+                          <style>{`
+                            .article-content {
+                              line-height: 1.7;
+                            }
+                            .article-content h1 {
+                              font-size: 2rem;
+                              font-weight: 700;
+                              margin-bottom: 1rem;
+                              margin-top: 2rem;
+                              line-height: 1.2;
+                            }
+                            .article-content h2 {
+                              font-size: 1.5rem;
+                              font-weight: 600;
+                              margin-bottom: 0.75rem;
+                              margin-top: 1.5rem;
+                              line-height: 1.3;
+                            }
+                            .article-content h3 {
+                              font-size: 1.25rem;
+                              font-weight: 600;
+                              margin-bottom: 0.5rem;
+                              margin-top: 1.25rem;
+                              line-height: 1.4;
+                            }
+                            .article-content p {
+                              margin-bottom: 1rem;
+                              line-height: 1.7;
+                            }
+                            .article-content strong {
+                              font-weight: 600;
+                            }
+                            .article-content em {
+                              font-style: italic;
+                            }
+                            .article-content ul, .article-content ol {
+                              margin-bottom: 1rem;
+                              padding-left: 1.5rem;
+                            }
+                            .article-content li {
+                              margin-bottom: 0.5rem;
+                            }
+                            .article-content blockquote {
+                              border-left: 4px solid #e5e7eb;
+                              padding-left: 1rem;
+                              margin: 1.5rem 0;
+                              font-style: italic;
+                            }
+                            .dark .article-content blockquote {
+                              border-left-color: #374151;
+                            }
+                            .article-content code {
+                              background-color: #f3f4f6;
+                              padding: 0.125rem 0.25rem;
+                              border-radius: 0.25rem;
+                              font-size: 0.875em;
+                            }
+                            .dark .article-content code {
+                              background-color: #374151;
+                            }
+                            .article-content pre {
+                              background-color: #f3f4f6;
+                              padding: 1rem;
+                              border-radius: 0.5rem;
+                              overflow-x: auto;
+                              margin: 1rem 0;
+                            }
+                            .dark .article-content pre {
+                              background-color: #1f2937;
+                            }
+                            .article-content a {
+                              color: #2563eb;
+                              text-decoration: underline;
+                            }
+                            .dark .article-content a {
+                              color: #60a5fa;
+                            }
+                          `}</style>
+                          <div 
+                            className="article-content"
+                            dangerouslySetInnerHTML={{ 
+                              __html: articleDescriptions[articleId] 
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </CardContent>
-                  {articleDescriptions[article.id.toString()] && (
-                    <div className="mt-4 p-2 border rounded bg-muted">
-                      <strong>Description:</strong>
-                      <p className="whitespace-pre-wrap">
-                        {articleDescriptions[article.id.toString()]}
-                      </p>
-                    </div>
-                  )}
                 </Card>
               );
             })}
