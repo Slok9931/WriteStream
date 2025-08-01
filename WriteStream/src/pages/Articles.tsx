@@ -97,10 +97,15 @@ export default function Articles() {
     try {
       const tx = await contract.purchaseArticle(articleId, { value: price });
       toast({
+        title: "Processing payment...",
+        description: "Waiting for transaction confirmation.",
+      });
+      await tx.wait();
+
+      toast({
         title: "Article purchased!",
         description: "You now have access to the full article content.",
       });
-      await tx.wait();
 
       // Update access map
       setAccessMap(prev => ({
