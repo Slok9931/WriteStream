@@ -7,7 +7,11 @@ interface PrivateRouteProps {
 }
 
 export function PrivateRoute({ children }: PrivateRouteProps) {
-  const { isConnected } = useWallet();
+  const { isConnected, isLoading } = useWallet();
+
+  if (isLoading) {
+    return null;
+  }
 
   if (!isConnected) {
     return <Navigate to="/" replace />;

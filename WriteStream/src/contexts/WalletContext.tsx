@@ -7,6 +7,7 @@ interface WalletContextType {
   provider: ethers.BrowserProvider | null;
   contract: ethers.Contract | null;
   isConnected: boolean;
+  isLoading: boolean;
   connectWallet: () => Promise<void>;
   disconnectWallet: () => void;
 }
@@ -242,9 +243,11 @@ const CONTRACT_ABI = [
   ];
 
 export function WalletProvider({ children }: { children: ReactNode }) {
+
   const [account, setAccount] = useState<string | null>(null);
   const [provider, setProvider] = useState<ethers.BrowserProvider | null>(null);
   const [contract, setContract] = useState<ethers.Contract | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
   const isConnected = !!account;
@@ -294,6 +297,30 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
+    let isMounted = true;
+    async function checkConnection() {
+      if (window.ethereum) {
+        try {
+          const newProvider = new ethers.BrowserProvider(window.ethereum);
+          const accounts = await newProvider.send('eth_accounts', []);
+          if (accounts.length > 0) {
+            const signer = await newProvider.getSigner();
+            const address = await signer.getAddress();
+            const newContract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
+            if (isMounted) {
+              setAccount(address);
+              setProvider(newProvider);
+              setContract(newContract);
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+      if (isMounted) setIsLoading(false);
+    }
+    checkConnection();
+
     if (window.ethereum) {
       window.ethereum.on('accountsChanged', (accounts: string[]) => {
         if (accounts.length === 0) {
@@ -307,6 +334,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     }
 
     return () => {
+      isMounted = false;
       if (window.ethereum) {
         window.ethereum.removeAllListeners('accountsChanged');
         window.ethereum.removeAllListeners('chainChanged');
@@ -321,6 +349,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         provider,
         contract,
         isConnected,
+        isLoading,
         connectWallet,
         disconnectWallet,
       }}
