@@ -1,6 +1,10 @@
 from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 import requests
+import os
+from dotenv import load_dotenv
+
+load_dotenv()  # Load variables from .env
 
 app = FastAPI()
 
@@ -12,15 +16,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-PINATA_API_KEY = "7135724bbfdd437a3e29"
-PINATA_SECRET_API_KEY = "81e3d0cae283038b4ac4c3c0d43bd94ab0e4fa2b4d79b9497bc74492680859e3"
+PINATA_API_KEY = os.getenv("PINATA_API_KEY")
+PINATA_SECRET_API_KEY = os.getenv("PINATA_SECRET_API_KEY")
 
 @app.post("/upload/")
 async def upload_file(file: UploadFile = File(...)):
     url = "https://api.pinata.cloud/pinning/pinFileToIPFS"
     headers = {
-        "pinata_api_key": '7135724bbfdd437a3e29',
-        "pinata_secret_api_key": '81e3d0cae283038b4ac4c3c0d43bd94ab0e4fa2b4d79b9497bc74492680859e3',
+        "pinata_api_key": PINATA_API_KEY,
+        "pinata_secret_api_key": PINATA_SECRET_API_KEY,
     }
 
     files = {
