@@ -330,12 +330,33 @@ export default function ArticleContent() {
                   .article-content em {
                     font-style: italic;
                   }
-                  .article-content ul, .article-content ol {
+                  .article-content ul {
                     margin-bottom: 1.5rem;
                     padding-left: 2rem;
+                    list-style-type: disc;
+                  }
+                  .article-content ol {
+                    margin-bottom: 1.5rem;
+                    padding-left: 2rem;
+                    list-style-type: decimal;
+                  }
+                  .article-content ul ul {
+                    list-style-type: circle;
+                    margin-top: 0.5rem;
+                  }
+                  .article-content ul ul ul {
+                    list-style-type: square;
+                  }
+                  .article-content ol ol {
+                    list-style-type: lower-alpha;
+                    margin-top: 0.5rem;
+                  }
+                  .article-content ol ol ol {
+                    list-style-type: lower-roman;
                   }
                   .article-content li {
                     margin-bottom: 0.75rem;
+                    line-height: 1.6;
                   }
                   .article-content blockquote {
                     border-left: 4px solid #e5e7eb;
@@ -409,4 +430,4 @@ export default function ArticleContent() {
       </main>
     </div>
   );
-} 
+}

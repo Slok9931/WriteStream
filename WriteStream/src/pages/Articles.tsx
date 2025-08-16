@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate } from 'react-router-dom';
-import { BookOpen, Heart, ShoppingCart, PenTool, LogOut, Wallet, ThumbsUp, ThumbsDown, Gift, Lock } from 'lucide-react';
+import { BookOpen, Heart, ShoppingCart, PenTool, LogOut, Wallet, ThumbsUp, ThumbsDown, Gift, Lock, Eye } from 'lucide-react';
 import { ethers } from 'ethers';
 import FullPageLoader from '@/components/FullPageLoader';
 
@@ -26,7 +26,10 @@ export default function Articles() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [accessMap, setAccessMap] = useState<{ [id: string]: boolean }>({});
+  const [descriptionsMap, setDescriptionsMap] = useState<{ [id: string]: string }>({});
   const [isPurchasing, setIsPurchasing] = useState(false);
+  const [isTipping, setIsTipping] = useState(false);
+  const [isLoadingDescription, setIsLoadingDescription] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -62,6 +65,9 @@ export default function Articles() {
 
       setArticles(fetchedArticles.reverse());
       setAccessMap(access);
+      
+      // Load descriptions for accessible articles
+      await loadDescriptions(fetchedArticles, access);
     } catch (error: any) {
       toast({
         title: "Error loading articles",
@@ -71,6 +77,37 @@ export default function Articles() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadDescriptions = async (articles: Article[], access: { [id: string]: boolean }) => {
+    const descriptions: { [id: string]: string } = {};
+    
+    for (const article of articles) {
+      const articleId = article.id.toString();
+      const isAuthor = article.author.toLowerCase() === account?.toLowerCase();
+      const isFree = article.price === 0n;
+      const hasAccess = access[articleId] || isAuthor || isFree;
+      
+      if (hasAccess) {
+        try {
+          const response = await fetch(`https://gateway.pinata.cloud/ipfs/${article.ipfsHash}`);
+          const htmlContent = await response.text();
+          
+          // Extract first 200 characters as preview, preserving some formatting
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = htmlContent;
+          const textContent = tempDiv.textContent || tempDiv.innerText || '';
+          descriptions[articleId] = textContent.substring(0, 200) + (textContent.length > 200 ? '...' : '');
+        } catch (error) {
+          console.error(`Failed to load description for article ${articleId}:`, error);
+          descriptions[articleId] = 'Failed to load preview.';
+        }
+      } else {
+        descriptions[articleId] = 'Purchase this article to read the full content and see the preview.';
+      }
+    }
+    
+    setDescriptionsMap(descriptions);
   };
 
   const purchaseArticle = async (articleId: bigint, price: bigint, event: React.MouseEvent) => {
@@ -92,11 +129,30 @@ export default function Articles() {
         description: "You now have access to the full article content.",
       });
 
-      // Update access map
-      setAccessMap(prev => ({
-        ...prev,
+      // Update access map and reload descriptions
+      const newAccessMap = {
+        ...accessMap,
         [articleId.toString()]: true
-      }));
+      };
+      setAccessMap(newAccessMap);
+      
+      // Load description for newly purchased article
+      const article = articles.find(a => a.id === articleId);
+      if (article) {
+        try {
+          const response = await fetch(`https://gateway.pinata.cloud/ipfs/${article.ipfsHash}`);
+          const htmlContent = await response.text();
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = htmlContent;
+          const textContent = tempDiv.textContent || tempDiv.innerText || '';
+          setDescriptionsMap(prev => ({
+            ...prev,
+            [articleId.toString()]: textContent.substring(0, 200) + (textContent.length > 200 ? '...' : '')
+          }));
+        } catch (error) {
+          console.error('Failed to load description:', error);
+        }
+      }
     } catch (error: any) {
       toast({
         title: "Purchase failed",
@@ -113,6 +169,12 @@ export default function Articles() {
   }
   if (isPurchasing) {
     return <FullPageLoader text="Processing payment..." />;
+  }
+  if (isTipping) {
+    return <FullPageLoader text="Sending tip..." />;
+  }
+  if (isLoadingDescription) {
+    return <FullPageLoader text="Loading article content..." />;
   }
 
   return (
@@ -172,33 +234,35 @@ export default function Articles() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-6">
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {articles.map((article) => {
               const hasAccess = accessMap[article.id.toString()];
               const articleId = article.id.toString();
               const isAuthor = article.author.toLowerCase() === account?.toLowerCase();
               const isFree = article.price === 0n;
+              const description = descriptionsMap[articleId] || '';
               
               return (
                 <Card 
                   key={articleId} 
-                  className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow duration-200"
+                  className="overflow-hidden cursor-pointer hover:shadow-lg transition-all duration-200 hover:scale-[1.02] flex flex-col h-full"
                   onClick={() => navigate(`/article/${articleId}`)}
                 >
-                  <CardHeader>
-                    <div className="flex items-start justify-between mb-2">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between mb-2">
                       {isFree ? (
-                        <Badge variant="secondary" className="text-sm font-semibold flex items-center">
+                        <Badge variant="secondary" className="text-xs flex items-center">
                           <Gift className="mr-1 h-3 w-3" />
                           Free
                         </Badge>
                       ) : (
-                        <Badge variant="outline" className="text-sm font-semibold flex items-center">
+                        <Badge variant="outline" className="text-xs flex items-center">
                           <Lock className="mr-1 h-3 w-3" />
                           {ethers.formatEther(article.price)} ETH
                         </Badge>
                       )}
-                      <div className="flex items-center gap-2">
+                      
+                      <div className="flex items-center gap-1">
                         {hasAccess && !isFree && (
                           <Badge variant="secondary" className="text-xs">
                             Purchased
@@ -206,57 +270,88 @@ export default function Articles() {
                         )}
                         {isAuthor && (
                           <Badge variant="outline" className="text-xs">
-                            Your Article
+                            Yours
                           </Badge>
                         )}
                       </div>
                     </div>
-                    <CardTitle className="text-xl leading-tight">{article.title}</CardTitle>
-                    <p className="text-sm text-muted-foreground">
+                    
+                    <CardTitle className="text-lg leading-tight line-clamp-2 mb-2">
+                      {article.title}
+                    </CardTitle>
+                    
+                    <p className="text-xs text-muted-foreground">
                       by {article.author.slice(0, 6)}...{article.author.slice(-4)}
                     </p>
                   </CardHeader>
                   
-                  <CardContent>
-                    {/* Vote Display */}
-                    <div className="flex items-center gap-4 mb-4">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <ThumbsUp className="h-4 w-4" />
-                        <span>{article.upvotes.toString()}</span>
+                  <CardContent className="pt-0 flex-1 flex flex-col">
+                    {/* Description Preview */}
+                    <div className="mb-4 flex-1">
+                      <p className="text-sm text-muted-foreground line-clamp-3 leading-relaxed">
+                        {description}
+                      </p>
+                    </div>
+
+                    {/* Stats */}
+                    <div className="flex items-center justify-between mb-4 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1">
+                          <ThumbsUp className="h-3 w-3" />
+                          <span>{article.upvotes.toString()}</span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <ThumbsDown className="h-3 w-3" />
+                          <span>{article.downvotes.toString()}</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <ThumbsDown className="h-4 w-4" />
-                        <span>{article.downvotes.toString()}</span>
+                      <div className="flex items-center gap-1">
+                        <Eye className="h-3 w-3" />
+                        <span>View</span>
                       </div>
                     </div>
 
-                    {/* Action Buttons */}
+                    {/* Action Button */}
                     {!isAuthor && (
-                      <div className="flex gap-2">
+                      <div className="mt-auto">
                         {isFree ? (
                           <Button
                             size="sm"
                             variant="outline"
-                            className="flex-1"
+                            className="w-full"
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
                               navigate(`/article/${articleId}`);
                             }}
                           >
-                            <Gift className="mr-2 h-4 w-4" />
+                            <Gift className="mr-2 h-3 w-3" />
                             Read Free
                           </Button>
                         ) : !hasAccess ? (
                           <Button
                             size="sm"
+                            className="w-full"
                             onClick={(e) => purchaseArticle(article.id, article.price, e)}
-                            className="flex-1"
                           >
-                            <ShoppingCart className="mr-2 h-4 w-4" />
-                            Buy Article
+                            <ShoppingCart className="mr-2 h-3 w-3" />
+                            Buy for {ethers.formatEther(article.price)} ETH
                           </Button>
-                        ) : null}
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              navigate(`/article/${articleId}`);
+                            }}
+                          >
+                            <Eye className="mr-2 h-3 w-3" />
+                            Read Article
+                          </Button>
+                        )}
                       </div>
                     )}
                   </CardContent>
