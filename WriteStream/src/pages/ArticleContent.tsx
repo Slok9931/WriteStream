@@ -288,39 +288,7 @@ export default function ArticleContent() {
                 </div>
               </div>
             )}
-
-            {/* Action Buttons */}
-            {!isAuthor && (
-              <div className="flex gap-2">
-                {isFree ? (
-                  <Button
-                    size="lg"
-                    variant="outline"
-                    onClick={() => {
-                      if (!hasAccess) {
-                        setHasAccess(true);
-                        loadArticleContent(article.ipfsHash);
-                      }
-                    }}
-                    className="flex-1"
-                  >
-                    <Gift className="mr-2 h-4 w-4" />
-                    Read Free Article
-                  </Button>
-                
-                ) : !hasAccess ? (
-                  <Button
-                    size="lg"
-                    onClick={purchaseArticle}
-                    disabled={isPurchasing}
-                    className="flex-1"
-                  >
-                    <ShoppingCart className="mr-2 h-4 w-4" />
-                    Buy Article for {ethers.formatEther(article.price)} ETH
-                  </Button>
-                ) : null}
-              </div>
-            )}
+            <div className='w-full mx-auto bg-muted-foreground/30 h-[2px]'></div>
           </CardHeader>
           
           <CardContent>
