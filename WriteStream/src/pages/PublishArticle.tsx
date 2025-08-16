@@ -9,7 +9,7 @@ import 'react-quill/dist/quill.snow.css';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate } from 'react-router-dom';
-import { BookOpen, PenTool, LogOut, Wallet, ArrowLeft, FileText, DollarSign, Gift, Lock } from 'lucide-react';
+import { BookOpen, PenTool, LogOut, Wallet, ArrowLeft, FileText, Gift, Lock } from 'lucide-react';
 import { ethers } from 'ethers';
 
 export default function PublishArticle() {
@@ -95,7 +95,7 @@ export default function PublishArticle() {
       const descriptionBlob = new Blob([description], { type: "text/plain" });
       formData.append("file", descriptionBlob, "description.txt");
 
-      const res = await fetch("http://localhost:8000/upload/", {
+      const res = await fetch("https://writestreamserver.onrender.com/upload/", {
         method: "POST",
         body: formData,
       });
