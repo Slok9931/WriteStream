@@ -5,10 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useToast } from '@/hooks/use-toast';
-import { Link } from 'react-router-dom';
-import { BookOpen, Heart, ShoppingCart, ExternalLink, PenTool, LogOut, Wallet, Eye, EyeOff } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { BookOpen, Heart, ShoppingCart, PenTool, LogOut, Wallet, ThumbsUp, ThumbsDown, Gift, Lock } from 'lucide-react';
 import { ethers } from 'ethers';
-import 'react-quill/dist/quill.snow.css';
 import FullPageLoader from '@/components/FullPageLoader';
 
 interface Article {
@@ -17,17 +16,17 @@ interface Article {
   title: string;
   ipfsHash: string;
   price: bigint;
+  upvotes: bigint;
+  downvotes: bigint;
 }
 
 export default function Articles() {
   const { account, contract, disconnectWallet } = useWallet();
+  const navigate = useNavigate();
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
-  const [articleDescriptions, setArticleDescriptions] = useState<{ [id: string]: string }>({});
   const [accessMap, setAccessMap] = useState<{ [id: string]: boolean }>({});
-  const [expandedArticles, setExpandedArticles] = useState<{ [id: string]: boolean }>({});
   const [isPurchasing, setIsPurchasing] = useState(false);
-  const [isTipping, setIsTipping] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -51,6 +50,8 @@ export default function Articles() {
             title: article.title,
             ipfsHash: article.ipfsHash,
             price: article.price,
+            upvotes: article.upvotes,
+            downvotes: article.downvotes,
           });
           // Check access for this article
           access[article.id.toString()] = await contract.checkAccess(article.id, account);
@@ -72,34 +73,10 @@ export default function Articles() {
     }
   };
 
-  const tipWriter = async (articleId: bigint) => {
-    if (!contract) return;
-    setIsTipping(true);
-    try {
-      const tx = await contract.tipWriter(articleId, { 
-        value: ethers.parseEther("0.01") 
-      });
-      toast({
-        title: "Sending tip...",
-        description: "Waiting for transaction confirmation.",
-      });
-      await tx.wait();
-      toast({
-        title: "Tip sent!",
-        description: "Your tip of 0.01 ETH has been sent to the author.",
-      });
-    } catch (error: any) {
-      toast({
-        title: "Tip failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    } finally {
-      setIsTipping(false);
-    }
-  };
-
-  const purchaseArticle = async (articleId: bigint, price: bigint) => {
+  const purchaseArticle = async (articleId: bigint, price: bigint, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
     if (!contract) return;
     setIsPurchasing(true);
     try {
@@ -120,20 +97,6 @@ export default function Articles() {
         ...prev,
         [articleId.toString()]: true
       }));
-
-      // Fetch and show description after purchase
-      const article = articles.find(a => a.id === articleId);
-      if (article) {
-        const desc = await fetchDescription(article.ipfsHash);
-        setArticleDescriptions((prev) => ({
-          ...prev,
-          [articleId.toString()]: desc,
-        }));
-        setExpandedArticles(prev => ({
-          ...prev,
-          [articleId.toString()]: true
-        }));
-      }
     } catch (error: any) {
       toast({
         title: "Purchase failed",
@@ -145,46 +108,11 @@ export default function Articles() {
     }
   };
 
-  async function fetchDescription(ipfsHash: string) {
-    try {
-      const res = await fetch(`https://gateway.pinata.cloud/ipfs/${ipfsHash}`);
-      const html = await res.text();
-      return html;
-    } catch (error) {
-      console.error('Failed to fetch description:', error);
-      return 'Failed to load article content.';
-    }
-  }
-
-  const viewDescription = async (article: Article) => {
-    const articleId = article.id.toString();
-    if (articleDescriptions[articleId]) {
-      setExpandedArticles(prev => ({
-        ...prev,
-        [articleId]: !prev[articleId]
-      }));
-    } else {
-      // Fetch and display
-      const desc = await fetchDescription(article.ipfsHash);
-      setArticleDescriptions((prev) => ({
-        ...prev,
-        [articleId]: desc,
-      }));
-      setExpandedArticles(prev => ({
-        ...prev,
-        [articleId]: true
-      }));
-    }
-  };
-
   if (loading) {
     return <FullPageLoader text="Loading articles..." />;
   }
   if (isPurchasing) {
     return <FullPageLoader text="Processing payment..." />;
-  }
-  if (isTipping) {
-    return <FullPageLoader text="Sending tip..." />;
   }
 
   return (
@@ -248,21 +176,40 @@ export default function Articles() {
             {articles.map((article) => {
               const hasAccess = accessMap[article.id.toString()];
               const articleId = article.id.toString();
-              const isExpanded = expandedArticles[articleId];
-              const hasContent = articleDescriptions[articleId];
+              const isAuthor = article.author.toLowerCase() === account?.toLowerCase();
+              const isFree = article.price === 0n;
               
               return (
-                <Card key={articleId} className="overflow-hidden">
+                <Card 
+                  key={articleId} 
+                  className="overflow-hidden cursor-pointer hover:shadow-lg transition-shadow duration-200"
+                  onClick={() => navigate(`/article/${articleId}`)}
+                >
                   <CardHeader>
                     <div className="flex items-start justify-between mb-2">
-                      <Badge variant="outline" className="text-sm font-semibold">
-                        {ethers.formatEther(article.price)} ETH
-                      </Badge>
-                      {hasAccess && (
-                        <Badge variant="secondary" className="text-xs">
-                          Purchased
+                      {isFree ? (
+                        <Badge variant="secondary" className="text-sm font-semibold flex items-center">
+                          <Gift className="mr-1 h-3 w-3" />
+                          Free
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-sm font-semibold flex items-center">
+                          <Lock className="mr-1 h-3 w-3" />
+                          {ethers.formatEther(article.price)} ETH
                         </Badge>
                       )}
+                      <div className="flex items-center gap-2">
+                        {hasAccess && !isFree && (
+                          <Badge variant="secondary" className="text-xs">
+                            Purchased
+                          </Badge>
+                        )}
+                        {isAuthor && (
+                          <Badge variant="outline" className="text-xs">
+                            Your Article
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                     <CardTitle className="text-xl leading-tight">{article.title}</CardTitle>
                     <p className="text-sm text-muted-foreground">
@@ -271,158 +218,45 @@ export default function Articles() {
                   </CardHeader>
                   
                   <CardContent>
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => tipWriter(article.id)}
-                      >
-                        <Heart className="mr-2 h-4 w-4" />
-                        Tip 0.01Ξ
-                      </Button>
-                      
-                      {!hasAccess && (
-                        <Button
-                          size="sm"
-                          onClick={() => purchaseArticle(article.id, article.price)}
-                        >
-                          <ShoppingCart className="mr-2 h-4 w-4" />
-                          Buy Article
-                        </Button>
-                      )}
-                      
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        asChild
-                      >
-                        <a
-                          href={`https://ipfs.io/ipfs/${article.ipfsHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          <ExternalLink className="mr-2 h-4 w-4" />
-                          View on IPFS
-                        </a>
-                      </Button>
-                      
-                      {hasAccess && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => viewDescription(article)}
-                        >
-                          {hasContent ? (
-                            isExpanded ? (
-                              <>
-                                <EyeOff className="mr-2 h-4 w-4" />
-                                Hide Content
-                              </>
-                            ) : (
-                              <>
-                                <Eye className="mr-2 h-4 w-4" />
-                                Show Content
-                              </>
-                            )
-                          ) : (
-                            <>
-                              <Eye className="mr-2 h-4 w-4" />
-                              Load Content
-                            </>
-                          )}
-                        </Button>
-                      )}
+                    {/* Vote Display */}
+                    <div className="flex items-center gap-4 mb-4">
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <ThumbsUp className="h-4 w-4" />
+                        <span>{article.upvotes.toString()}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <ThumbsDown className="h-4 w-4" />
+                        <span>{article.downvotes.toString()}</span>
+                      </div>
                     </div>
 
-                    {/* Article Content with Proper Formatting */}
-                    {hasContent && isExpanded && (
-                      <div className="mt-6 border-t pt-6">
-                        <div className="prose prose-sm dark:prose-invert max-w-none">
-                          <style>{`
-                            .article-content {
-                              line-height: 1.7;
-                            }
-                            .article-content h1 {
-                              font-size: 2rem;
-                              font-weight: 700;
-                              margin-bottom: 1rem;
-                              margin-top: 2rem;
-                              line-height: 1.2;
-                            }
-                            .article-content h2 {
-                              font-size: 1.5rem;
-                              font-weight: 600;
-                              margin-bottom: 0.75rem;
-                              margin-top: 1.5rem;
-                              line-height: 1.3;
-                            }
-                            .article-content h3 {
-                              font-size: 1.25rem;
-                              font-weight: 600;
-                              margin-bottom: 0.5rem;
-                              margin-top: 1.25rem;
-                              line-height: 1.4;
-                            }
-                            .article-content p {
-                              margin-bottom: 1rem;
-                              line-height: 1.7;
-                            }
-                            .article-content strong {
-                              font-weight: 600;
-                            }
-                            .article-content em {
-                              font-style: italic;
-                            }
-                            .article-content ul, .article-content ol {
-                              margin-bottom: 1rem;
-                              padding-left: 1.5rem;
-                            }
-                            .article-content li {
-                              margin-bottom: 0.5rem;
-                            }
-                            .article-content blockquote {
-                              border-left: 4px solid #e5e7eb;
-                              padding-left: 1rem;
-                              margin: 1.5rem 0;
-                              font-style: italic;
-                            }
-                            .dark .article-content blockquote {
-                              border-left-color: #374151;
-                            }
-                            .article-content code {
-                              background-color: #f3f4f6;
-                              padding: 0.125rem 0.25rem;
-                              border-radius: 0.25rem;
-                              font-size: 0.875em;
-                            }
-                            .dark .article-content code {
-                              background-color: #374151;
-                            }
-                            .article-content pre {
-                              background-color: #f3f4f6;
-                              padding: 1rem;
-                              border-radius: 0.5rem;
-                              overflow-x: auto;
-                              margin: 1rem 0;
-                            }
-                            .dark .article-content pre {
-                              background-color: #1f2937;
-                            }
-                            .article-content a {
-                              color: #2563eb;
-                              text-decoration: underline;
-                            }
-                            .dark .article-content a {
-                              color: #60a5fa;
-                            }
-                          `}</style>
-                          <div 
-                            className="article-content"
-                            dangerouslySetInnerHTML={{ 
-                              __html: articleDescriptions[articleId] 
+                    {/* Action Buttons */}
+                    {!isAuthor && (
+                      <div className="flex gap-2">
+                        {isFree ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="flex-1"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              navigate(`/article/${articleId}`);
                             }}
-                          />
-                        </div>
+                          >
+                            <Gift className="mr-2 h-4 w-4" />
+                            Read Free
+                          </Button>
+                        ) : !hasAccess ? (
+                          <Button
+                            size="sm"
+                            onClick={(e) => purchaseArticle(article.id, article.price, e)}
+                            className="flex-1"
+                          >
+                            <ShoppingCart className="mr-2 h-4 w-4" />
+                            Buy Article
+                          </Button>
+                        ) : null}
                       </div>
                     )}
                   </CardContent>

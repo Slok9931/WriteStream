@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useWallet } from '@/contexts/WalletContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -9,7 +9,7 @@ import 'react-quill/dist/quill.snow.css';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate } from 'react-router-dom';
-import { BookOpen, PenTool, LogOut, Wallet, ArrowLeft, FileText, DollarSign } from 'lucide-react';
+import { BookOpen, PenTool, LogOut, Wallet, ArrowLeft, FileText, DollarSign, Gift, Lock } from 'lucide-react';
 import { ethers } from 'ethers';
 
 export default function PublishArticle() {
@@ -17,9 +17,17 @@ export default function PublishArticle() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [isPaidArticle, setIsPaidArticle] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  // Set default price when switching to paid article
+  useEffect(() => {
+    if (isPaidArticle && !price) {
+      setPrice('0.01');
+    }
+  }, [isPaidArticle, price]);
 
   const quillModules = {
     toolbar: [
@@ -41,6 +49,14 @@ export default function PublishArticle() {
     'blockquote', 'code-block', 'link', 'image', 'align'
   ];
 
+  const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    // Ensure price is never 0 or negative
+    if (value === '' || parseFloat(value) > 0) {
+      setPrice(value);
+    }
+  };
+
   const publishArticle = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -53,10 +69,19 @@ export default function PublishArticle() {
       return;
     }
 
-    if (!title.trim() || !description.trim() || !price.trim()) {
+    if (!title.trim() || !description.trim()) {
       toast({
         title: "Missing information",
-        description: "Please fill in all fields to publish your article.",
+        description: "Please fill in title and content to publish your article.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (isPaidArticle && (!price.trim() || parseFloat(price) <= 0)) {
+      toast({
+        title: "Invalid price",
+        description: "Please set a valid price greater than 0 for your paid article.",
         variant: "destructive",
       });
       return;
@@ -64,7 +89,7 @@ export default function PublishArticle() {
 
     try {
       setIsPublishing(true);
-      const priceInWei = ethers.parseEther(price);
+      const priceInWei = isPaidArticle ? ethers.parseEther(price) : 0n;
 
       const formData = new FormData();
       const descriptionBlob = new Blob([description], { type: "text/plain" });
@@ -96,12 +121,13 @@ export default function PublishArticle() {
 
       toast({
         title: "Article published!",
-        description: "Your article has been successfully published on WriteStream.",
+        description: `Your ${isPaidArticle ? 'paid' : 'free'} article has been successfully published on WriteStream.`,
       });
 
       setTitle('');
       setDescription('');
       setPrice('');
+      setIsPaidArticle(false);
 
       navigate('/articles');
 
@@ -236,30 +262,106 @@ export default function PublishArticle() {
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center text-lg">
-                  <DollarSign className="mr-2 h-5 w-5" />
-                  Pricing
+                  {isPaidArticle ? (
+                    <>
+                      <Lock className="mr-2 h-6 w-5" />
+                      Paid Article
+                    </>
+                  ) : (
+                    <>
+                      <Gift className="mr-2 h-5 w-5" />
+                      Free Article
+                    </>
+                  )}
                 </CardTitle>
                 <CardDescription>
-                  Set your article price
+                  Choose your article's access model
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  <Label htmlFor="price">Price (ETH)</Label>
-                  <Input
-                    id="price"
-                    type="number"
-                    step="0.001"
-                    min="0"
-                    placeholder="0.01"
-                    value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                    required
-                    className="text-center text-lg font-semibold"
-                  />
-                  <p className="text-xs text-muted-foreground text-center">
-                    Readers pay this amount to access your full article
-                  </p>
+                <div className="space-y-4">
+                  {/* Article Type Selection - Dynamic Layout */}
+                  <div className={`transition-all duration-300 ease-in-out ${
+                    isPaidArticle ? 'grid grid-cols-1' : 'grid grid-cols-2 gap-3'
+                  }`}>
+                    {/* Free Button - Hidden when paid is selected */}
+                    <div className={`transition-all duration-300 ease-in-out ${
+                      isPaidArticle ? 'w-0 h-0 opacity-0 overflow-hidden' : 'w-full opacity-100'
+                    }`}>
+                      <Button
+                        type="button"
+                        variant={!isPaidArticle ? "default" : "outline"}
+                        onClick={() => {
+                          setIsPaidArticle(false);
+                          setPrice('');
+                        }}
+                        className="flex items-center justify-center w-full"
+                      >
+                        <Gift className="mr-2 h-4 w-4" />
+                        Free
+                      </Button>
+                    </div>
+                    
+                    {/* Paid Button */}
+                    <Button
+                      type="button"
+                      variant={isPaidArticle ? "default" : "outline"}
+                      onClick={() => setIsPaidArticle(true)}
+                      className="flex items-center justify-center w-full"
+                    >
+                      <Lock className="mr-2 h-4 w-4" />
+                      Paid
+                    </Button>
+                  </div>
+                  
+                  {/* Price Input Section - Smooth Transition with increased height */}
+                  <div className={`transition-all duration-500 ease-in-out overflow-hidden ${
+                    isPaidArticle 
+                      ? 'max-h-60 opacity-100 transform translate-y-0' 
+                      : 'max-h-0 opacity-0 transform -translate-y-2'
+                  }`}>
+                    <div className="space-y-4 pt-4 border-t">
+                      {/* Back to Free Option */}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                          setIsPaidArticle(false);
+                          setPrice('');
+                        }}
+                        className="w-full text-sm flex items-center justify-center hover:bg-muted/50"
+                      >
+                        <Gift className="mr-2 h-4 w-4" />
+                        Make it Free Instead
+                      </Button>
+                      
+                      {/* Price Input */}
+                      <div className="space-y-3">
+                        <Label htmlFor="price" className="flex items-center text-sm font-medium">
+                          Price (ETH)
+                        </Label>
+                        <div className="relative">
+                          <Input
+                            id="price"
+                            type="number"
+                            step="0.001"
+                            min="0.001"
+                            placeholder="0.01"
+                            value={price}
+                            onChange={handlePriceChange}
+                            required={isPaidArticle}
+                            className="text-center text-lg font-semibold pr-16 py-3 border border-input rounded-md bg-background focus:border-ring focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none"
+                          />
+                          <div className="absolute inset-y-0 right-0 flex items-center pr-4 pointer-events-none">
+                            <span className="text-muted-foreground text-sm font-medium">ETH</span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground text-center leading-relaxed px-1 mt-2">
+                          Readers pay this amount to access your full article
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </CardContent>
             </Card>

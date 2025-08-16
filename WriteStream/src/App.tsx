@@ -8,6 +8,7 @@ import { WalletProvider } from "@/contexts/WalletContext";
 import { PrivateRoute } from "@/components/PrivateRoute";
 import ConnectWallet from "./pages/ConnectWallet";
 import Articles from "./pages/Articles";
+import ArticleContent from "./pages/ArticleContent";
 import PublishArticle from "./pages/PublishArticle";
 import NotFound from "./pages/NotFound";
 
@@ -28,6 +29,14 @@ const App = () => (
                 element={
                   <PrivateRoute>
                     <Articles />
+                  </PrivateRoute>
+                }
+              />
+              <Route
+                path="/article/:articleId"
+                element={
+                  <PrivateRoute>
+                    <ArticleContent />
                   </PrivateRoute>
                 }
               />
