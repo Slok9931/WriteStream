@@ -546,6 +546,6 @@ async def startup_event():
 # Use Render's PORT environment variable
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))
+    port = 8000  # Default port
     print(f"Starting server on 0.0.0.0:{port}")
     uvicorn.run(app, host="0.0.0.0", port=port)
