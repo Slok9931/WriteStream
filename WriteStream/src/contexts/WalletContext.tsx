@@ -447,12 +447,11 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const connectWallet = async () => {
     try {
       if (!window.ethereum) {
-        toast({
-          title: "MetaMask not found",
-          description: "Please install MetaMask to use this application.",
-          variant: "destructive",
-        });
-        return;
+        window.open(
+        "https://chromewebstore.google.com/detail/metamask/nkbihfbeogaeaoehlefnkodbefgpgknn?hl=en",
+        "_blank"
+      );
+      return;
       }
 
       const newProvider = new ethers.BrowserProvider(window.ethereum);
