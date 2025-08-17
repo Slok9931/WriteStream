@@ -527,7 +527,7 @@ export default function Articles() {
 
         {/* Search Bar */}
         <div className="mb-6">
-          <div className="relative max-w-md">
+          <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
             <Input
               placeholder="Search articles, authors, or content..."
@@ -568,15 +568,6 @@ export default function Articles() {
                 <Badge variant="secondary" className="ml-1">
                   {getFilteredCount(filter.id as FilterType)}
                 </Badge>
-                {activeFilter === filter.id && filter.id !== 'all' && (
-                  <X 
-                    className="h-3 w-3 ml-1 cursor-pointer" 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setActiveFilter('all');
-                    }}
-                  />
-                )}
               </Button>
             ))}
           </div>
