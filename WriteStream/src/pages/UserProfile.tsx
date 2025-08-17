@@ -297,8 +297,8 @@ export default function UserProfile() {
                   <div className="space-y-4">
                     {favorites.map((fav: any) => (
                       <div key={fav.article_id} className="flex items-center justify-between p-4 border rounded-lg">
-                        <div className="flex-1">
-                          <p className="font-medium">{fav.article_title}</p>
+                        <div>
+                          <p className="font-medium">{fav.article_title || `Article #${fav.article_id}`}</p>
                           <p className="text-sm text-muted-foreground">
                             Added on {new Date(fav.added_at).toLocaleDateString()}
                           </p>

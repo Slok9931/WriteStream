@@ -35,6 +35,7 @@ interface UserProfileContextType {
   recordView: (articleId: number) => Promise<void>;
   getArticleAnalytics: (articleId: number) => Promise<ArticleAnalytics>;
   getUserArticles: () => Promise<any[]>;
+  searchArticles: (query: string) => Promise<any[]>;
   loading: boolean;
 }
 
@@ -274,6 +275,16 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const searchArticles = async (query: string) => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/articles/search?query=${encodeURIComponent(query)}`);
+      return await response.json();
+    } catch (error) {
+      console.error('Failed to search articles:', error);
+      return [];
+    }
+  };
+
   return (
     <UserProfileContext.Provider
       value={{
@@ -290,6 +301,7 @@ export function UserProfileProvider({ children }: { children: ReactNode }) {
         recordView,
         getArticleAnalytics,
         getUserArticles,
+        searchArticles,
         loading,
       }}
     >

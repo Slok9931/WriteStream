@@ -82,6 +82,8 @@ export default function Articles() {
   const [userFavorites, setUserFavorites] = useState<number[]>([]);
   const [userArticleIds, setUserArticleIds] = useState<number[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -236,7 +238,37 @@ export default function Articles() {
     setDescriptionsMap(descriptions);
   };
 
-  const handleFavorite = async (articleId: string, event: React.MouseEvent) => {
+  const searchArticles = async (query: string) => {
+    // Simple local search using the articles array
+    const lowerQuery = query.toLowerCase().trim();
+    return articles.filter(article => {
+      const title = article.title.toLowerCase();
+      const author = article.author.toLowerCase();
+      const description = descriptionsMap[article.id.toString()]?.toLowerCase() || '';
+      return title.includes(lowerQuery) || author.includes(lowerQuery) || description.includes(lowerQuery);
+    });
+  };
+  
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    if (query.trim().length === 0) {
+      setSearchResults([]);
+      return;
+    }
+    
+    setIsSearching(true);
+    try {
+      const results = await searchArticles(query);
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Search failed:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleFavorite = async (articleId: string, articleTitle: string, event: React.MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
     
@@ -255,7 +287,7 @@ export default function Articles() {
           description: "Article removed from your favorites.",
         });
       } else {
-        await addToFavorites(articleIdNum, article.title);
+        await addToFavorites(articleIdNum, articleTitle);
         setUserFavorites(prev => [...prev, articleIdNum]);
         toast({
           title: "Added to favorites",
@@ -520,31 +552,19 @@ export default function Articles() {
       <main className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <h2 className="text-3xl font-bold mb-2">Published Articles</h2>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground mb-4">
             Discover and support amazing content from writers around the world
           </p>
-        </div>
-
-        {/* Search Bar */}
-        <div className="mb-6">
+          
+          {/* Search Bar */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
             <Input
-              placeholder="Search articles, authors, or content..."
+              placeholder="Search articles..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => handleSearch(e.target.value)}
               className="pl-10"
             />
-            {searchQuery && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            )}
           </div>
         </div>
 
@@ -670,7 +690,7 @@ export default function Articles() {
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={(e) => handleFavorite(articleId, e)}
+                            onClick={(e) => handleFavorite(articleId, article.title, e)}
                             disabled={isFavoriting}
                             className="p-1 h-6 w-6"
                           >
