@@ -10,6 +10,8 @@ import { Link } from 'react-router-dom';
 import { BookOpen, Heart, ShoppingCart, PenTool, LogOut, Wallet, ThumbsUp, ThumbsDown, ArrowLeft, Gift, Lock } from 'lucide-react';
 import { ethers } from 'ethers';
 import FullPageLoader from '@/components/FullPageLoader';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useUserProfile } from '@/contexts/UserProfileContext';
 
 interface Article {
   id: bigint;
@@ -25,6 +27,7 @@ export default function ArticleContent() {
   const { articleId } = useParams<{ articleId: string }>();
   const navigate = useNavigate();
   const { account, contract, disconnectWallet } = useWallet();
+  const { profile } = useUserProfile();
   const [article, setArticle] = useState<Article | null>(null);
   const [articleContent, setArticleContent] = useState<string>('');
   const [loading, setLoading] = useState(true);
@@ -201,11 +204,17 @@ export default function ArticleContent() {
                 Publish
               </Button>
             </Link>
-            
-            <div className="flex items-center space-x-2 text-sm">
-              <Wallet className="h-4 w-4" />
-              <span>{account?.slice(0, 6)}...{account?.slice(-4)}</span>
-            </div>
+
+            <Link to="/profile">
+              <Button variant="ghost" size="sm" className="p-1">
+                <Avatar className="w-8 h-8">
+                  <AvatarImage src={profile?.avatar_url} />
+                  <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-600 text-white text-sm">
+                    {profile?.username?.charAt(0).toUpperCase() || account?.slice(2, 4).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              </Button>
+            </Link>
             
             <Button variant="outline" size="sm" onClick={disconnectWallet}>
               <LogOut className="h-4 w-4" />

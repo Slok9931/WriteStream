@@ -11,9 +11,12 @@ import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate } from 'react-router-dom';
 import { BookOpen, PenTool, LogOut, Wallet, ArrowLeft, FileText, Gift, Lock } from 'lucide-react';
 import { ethers } from 'ethers';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useUserProfile } from '@/contexts/UserProfileContext';
 
 export default function PublishArticle() {
   const { account, contract, disconnectWallet } = useWallet();
+  const { profile } = useUserProfile();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
@@ -95,7 +98,11 @@ export default function PublishArticle() {
       const descriptionBlob = new Blob([description], { type: "text/plain" });
       formData.append("file", descriptionBlob, "description.txt");
 
-      const res = await fetch("https://writestreamserver.onrender.com/upload/", {
+      // const res = await fetch("https://writestreamserver.onrender.com/upload/", {
+      //   method: "POST",
+      //   body: formData,
+      // });
+      const res = await fetch("http://localhost:8000/upload/", {
         method: "POST",
         body: formData,
       });
@@ -145,20 +152,25 @@ export default function PublishArticle() {
   return (
     <div className="min-h-screen bg-background">
       <header className="border-b border-border sticky top-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 z-50">
-        <div className="container mx-auto px-4 py-3 flex items-center justify-between">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center space-x-4">
-            <Link to="/articles" className="flex items-center space-x-2 hover:opacity-70 transition-opacity">
-              <ArrowLeft className="h-5 w-5" />
+            <BookOpen className="h-8 w-8" />
+            <Link to="/articles" className="text-2xl font-bold hover:underline">
+              WriteStream
             </Link>
-            <BookOpen className="h-7 w-7" />
-            <h1 className="text-xl font-bold">WriteStream</h1>
           </div>
           
           <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2 text-sm">
-              <Wallet className="h-4 w-4" />
-              <span>{account?.slice(0, 6)}...{account?.slice(-4)}</span>
-            </div>
+            <Link to="/profile">
+              <Button variant="ghost" size="sm" className="p-1">
+                <Avatar className="w-8 h-8">
+                  <AvatarImage src={profile?.avatar_url} />
+                  <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-600 text-white text-sm">
+                    {profile?.username?.charAt(0).toUpperCase() || account?.slice(2, 4).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              </Button>
+            </Link>
             
             <Button variant="outline" size="sm" onClick={disconnectWallet}>
               <LogOut className="h-4 w-4" />

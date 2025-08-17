@@ -1,12 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { useWallet } from '@/contexts/WalletContext';
+import { useUserProfile } from '@/contexts/UserProfileContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Input } from '@/components/ui/input';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useToast } from '@/hooks/use-toast';
 import { Link, useNavigate } from 'react-router-dom';
-import { BookOpen, Heart, ShoppingCart, PenTool, LogOut, Wallet, ThumbsUp, ThumbsDown, Gift, Lock, Eye } from 'lucide-react';
+import { 
+  BookOpen, 
+  Heart, 
+  ShoppingCart, 
+  PenTool, 
+  LogOut, 
+  ThumbsUp, 
+  ThumbsDown, 
+  Gift, 
+  Lock, 
+  Eye,
+  User,
+  X,
+  Search
+} from 'lucide-react';
 import { ethers } from 'ethers';
 import FullPageLoader from '@/components/FullPageLoader';
 
@@ -20,21 +37,113 @@ interface Article {
   downvotes: bigint;
 }
 
+interface ArticleWithAnalytics extends Article {
+  analytics: {
+    total_likes: number;
+    total_dislikes: number;
+    total_views: number;
+  };
+  userReaction: {
+    has_reacted: boolean;
+    reaction_type: 'like' | 'dislike' | null;
+  };
+  isFavorited: boolean;
+}
+
+type FilterType = 'all' | 'my-articles' | 'favorites';
+
 export default function Articles() {
   const { account, contract, disconnectWallet } = useWallet();
+  const { 
+    profile,
+    recordView, 
+    likeArticle, 
+    dislikeArticle, 
+    removeReaction, 
+    getUserReaction, 
+    getArticleAnalytics,
+    addToFavorites,
+    removeFromFavorites,
+    isArticleFavorited,
+    getUserFavorites,
+    getUserArticles
+  } = useUserProfile();
   const navigate = useNavigate();
-  const [articles, setArticles] = useState<Article[]>([]);
+  const [articles, setArticles] = useState<ArticleWithAnalytics[]>([]);
+  const [filteredArticles, setFilteredArticles] = useState<ArticleWithAnalytics[]>([]);
   const [loading, setLoading] = useState(true);
   const [accessMap, setAccessMap] = useState<{ [id: string]: boolean }>({});
   const [descriptionsMap, setDescriptionsMap] = useState<{ [id: string]: string }>({});
   const [isPurchasing, setIsPurchasing] = useState(false);
-  const [isTipping, setIsTipping] = useState(false);
   const [isLoadingDescription, setIsLoadingDescription] = useState(false);
+  const [reactingArticles, setReactingArticles] = useState<Set<string>>(new Set());
+  const [favoriteArticles, setFavoriteArticles] = useState<Set<string>>(new Set());
+  const [activeFilter, setActiveFilter] = useState<FilterType>('all');
+  const [userFavorites, setUserFavorites] = useState<number[]>([]);
+  const [userArticleIds, setUserArticleIds] = useState<number[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
   const { toast } = useToast();
 
   useEffect(() => {
     loadArticles();
+    loadUserData();
   }, [contract, account]);
+
+  useEffect(() => {
+    filterArticles();
+  }, [articles, activeFilter, userFavorites, userArticleIds, searchQuery]);
+
+  const loadUserData = async () => {
+    try {
+      const [favorites, userArticles] = await Promise.all([
+        getUserFavorites(),
+        getUserArticles()
+      ]);
+      
+      setUserFavorites(favorites.map((fav: any) => fav.article_id));
+      setUserArticleIds(userArticles.map((article: any) => article.article_id));
+    } catch (error) {
+      console.error('Failed to load user data:', error);
+    }
+  };
+
+  const filterArticles = () => {
+    let filtered = [...articles];
+    
+    // Apply filter
+    switch (activeFilter) {
+      case 'my-articles':
+        filtered = filtered.filter(article => 
+          article.author.toLowerCase() === account?.toLowerCase()
+        );
+        break;
+      case 'favorites':
+        filtered = filtered.filter(article => 
+          userFavorites.includes(Number(article.id))
+        );
+        break;
+      case 'all':
+      default:
+        // Show all articles
+        break;
+    }
+
+    // Apply search
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      filtered = filtered.filter(article => {
+        const title = article.title.toLowerCase();
+        const author = article.author.toLowerCase();
+        const description = descriptionsMap[article.id.toString()]?.toLowerCase() || '';
+        
+        return title.includes(query) || 
+               author.includes(query) || 
+               description.includes(query);
+      });
+    }
+    
+    setFilteredArticles(filtered);
+  };
 
   const loadArticles = async () => {
     if (!contract || !account) return;
@@ -56,15 +165,33 @@ export default function Articles() {
             upvotes: article.upvotes,
             downvotes: article.downvotes,
           });
-          // Check access for this article
           access[article.id.toString()] = await contract.checkAccess(article.id, account);
         } catch (err) {
           console.error(`Error loading article ${i}:`, err);
         }
       }
 
-      setArticles(fetchedArticles.reverse());
       setAccessMap(access);
+      
+      // Load analytics, user reactions, and favorites for each article
+      const articlesWithAnalytics = await Promise.all(
+        fetchedArticles.map(async (article) => {
+          const [analytics, userReaction, isFavorited] = await Promise.all([
+            getArticleAnalytics(Number(article.id)),
+            getUserReaction(Number(article.id)),
+            isArticleFavorited(Number(article.id))
+          ]);
+          
+          return {
+            ...article,
+            analytics,
+            userReaction,
+            isFavorited
+          };
+        })
+      );
+
+      setArticles(articlesWithAnalytics.reverse());
       
       // Load descriptions for accessible articles
       await loadDescriptions(fetchedArticles, access);
@@ -93,7 +220,6 @@ export default function Articles() {
           const response = await fetch(`https://gateway.pinata.cloud/ipfs/${article.ipfsHash}`);
           const htmlContent = await response.text();
           
-          // Extract first 200 characters as preview, preserving some formatting
           const tempDiv = document.createElement('div');
           tempDiv.innerHTML = htmlContent;
           const textContent = tempDiv.textContent || tempDiv.innerText || '';
@@ -110,6 +236,168 @@ export default function Articles() {
     setDescriptionsMap(descriptions);
   };
 
+  const handleFavorite = async (articleId: string, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const articleIdNum = Number(articleId);
+    setFavoriteArticles(prev => new Set([...prev, articleId]));
+    
+    try {
+      const article = articles.find(a => a.id.toString() === articleId);
+      if (!article) return;
+
+      if (article.isFavorited) {
+        await removeFromFavorites(articleIdNum);
+        setUserFavorites(prev => prev.filter(id => id !== articleIdNum));
+        toast({
+          title: "Removed from favorites",
+          description: "Article removed from your favorites.",
+        });
+      } else {
+        await addToFavorites(articleIdNum, article.title);
+        setUserFavorites(prev => [...prev, articleIdNum]);
+        toast({
+          title: "Added to favorites",
+          description: "Article added to your favorites.",
+        });
+      }
+
+      // Update the article state
+      setArticles(prev => prev.map(a => {
+        if (a.id.toString() === articleId) {
+          return { ...a, isFavorited: !a.isFavorited };
+        }
+        return a;
+      }));
+
+    } catch (error) {
+      toast({
+        title: "Failed to update favorites",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setFavoriteArticles(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(articleId);
+        return newSet;
+      });
+    }
+  };
+
+  const handleLike = async (articleId: string, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const articleIdNum = Number(articleId);
+    setReactingArticles(prev => new Set([...prev, articleId]));
+    
+    try {
+      const article = articles.find(a => a.id.toString() === articleId);
+      if (!article) return;
+
+      let result;
+      if (article.userReaction.has_reacted && article.userReaction.reaction_type === 'like') {
+        result = await removeReaction(articleIdNum);
+      } else {
+        result = await likeArticle(articleIdNum);
+      }
+
+      setArticles(prev => prev.map(a => {
+        if (a.id.toString() === articleId) {
+          const wasLiked = a.userReaction.has_reacted && a.userReaction.reaction_type === 'like';
+          return {
+            ...a,
+            analytics: {
+              ...a.analytics,
+              total_likes: result.likes,
+              total_dislikes: result.dislikes
+            },
+            userReaction: wasLiked ? 
+              { has_reacted: false, reaction_type: null } :
+              { has_reacted: true, reaction_type: 'like' as const }
+          };
+        }
+        return a;
+      }));
+
+      toast({
+        title: article.userReaction.has_reacted && article.userReaction.reaction_type === 'like' ? 
+          "Like removed" : "Article liked",
+        description: "Your reaction has been updated.",
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to update reaction",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setReactingArticles(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(articleId);
+        return newSet;
+      });
+    }
+  };
+
+  const handleDislike = async (articleId: string, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const articleIdNum = Number(articleId);
+    setReactingArticles(prev => new Set([...prev, articleId]));
+    
+    try {
+      const article = articles.find(a => a.id.toString() === articleId);
+      if (!article) return;
+
+      let result;
+      if (article.userReaction.has_reacted && article.userReaction.reaction_type === 'dislike') {
+        result = await removeReaction(articleIdNum);
+      } else {
+        result = await dislikeArticle(articleIdNum);
+      }
+
+      setArticles(prev => prev.map(a => {
+        if (a.id.toString() === articleId) {
+          const wasDisliked = a.userReaction.has_reacted && a.userReaction.reaction_type === 'dislike';
+          return {
+            ...a,
+            analytics: {
+              ...a.analytics,
+              total_likes: result.likes,
+              total_dislikes: result.dislikes
+            },
+            userReaction: wasDisliked ? 
+              { has_reacted: false, reaction_type: null } :
+              { has_reacted: true, reaction_type: 'dislike' as const }
+          };
+        }
+        return a;
+      }));
+
+      toast({
+        title: article.userReaction.has_reacted && article.userReaction.reaction_type === 'dislike' ? 
+          "Dislike removed" : "Article disliked",
+        description: "Your reaction has been updated.",
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to update reaction",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setReactingArticles(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(articleId);
+        return newSet;
+      });
+    }
+  };
+
   const purchaseArticle = async (articleId: bigint, price: bigint, event: React.MouseEvent) => {
     event.preventDefault();
     event.stopPropagation();
@@ -117,11 +405,12 @@ export default function Articles() {
     if (!contract) return;
     setIsPurchasing(true);
     try {
-      const tx = await contract.purchaseArticle(articleId, { value: price });
       toast({
         title: "Processing payment...",
-        description: "Waiting for transaction confirmation.",
+        description: "Please wait while your transaction is being processed.",
       });
+
+      const tx = await contract.purchaseArticle(articleId, { value: price });
       await tx.wait();
 
       toast({
@@ -129,14 +418,12 @@ export default function Articles() {
         description: "You now have access to the full article content.",
       });
 
-      // Update access map and reload descriptions
       const newAccessMap = {
         ...accessMap,
         [articleId.toString()]: true
       };
       setAccessMap(newAccessMap);
       
-      // Load description for newly purchased article
       const article = articles.find(a => a.id === articleId);
       if (article) {
         try {
@@ -164,14 +451,29 @@ export default function Articles() {
     }
   };
 
+  const handleArticleClick = async (articleId: string) => {
+    await recordView(parseInt(articleId));
+    navigate(`/article/${articleId}`);
+  };
+
+  const getFilteredCount = (filterType: FilterType) => {
+    switch (filterType) {
+      case 'my-articles':
+        return articles.filter(article => 
+          article.author.toLowerCase() === account?.toLowerCase()
+        ).length;
+      case 'favorites':
+        return userFavorites.length;
+      default:
+        return articles.length;
+    }
+  };
+
   if (loading) {
     return <FullPageLoader text="Loading articles..." />;
   }
   if (isPurchasing) {
     return <FullPageLoader text="Processing payment..." />;
-  }
-  if (isTipping) {
-    return <FullPageLoader text="Sending tip..." />;
   }
   if (isLoadingDescription) {
     return <FullPageLoader text="Loading article content..." />;
@@ -194,11 +496,17 @@ export default function Articles() {
                 Publish
               </Button>
             </Link>
-            
-            <div className="flex items-center space-x-2 text-sm">
-              <Wallet className="h-4 w-4" />
-              <span>{account?.slice(0, 6)}...{account?.slice(-4)}</span>
-            </div>
+
+            <Link to="/profile">
+              <Button variant="ghost" size="sm" className="p-1">
+                <Avatar className="w-8 h-8">
+                  <AvatarImage src={profile?.avatar_url} />
+                  <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-600 text-white text-sm">
+                    {profile?.username?.charAt(0).toUpperCase() || account?.slice(2, 4).toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+              </Button>
+            </Link>
             
             <Button variant="outline" size="sm" onClick={disconnectWallet}>
               <LogOut className="h-4 w-4" />
@@ -217,36 +525,129 @@ export default function Articles() {
           </p>
         </div>
 
-        {articles.length === 0 ? (
+        {/* Search Bar */}
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+            <Input
+              placeholder="Search articles, authors, or content..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
+            {searchQuery && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6 p-0"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Filter Buttons */}
+        <div className="mb-6">
+          <div className="flex flex-wrap gap-2">
+            {[
+              { id: 'all', label: 'All Articles', icon: BookOpen },
+              { id: 'my-articles', label: 'My Articles', icon: User },
+              { id: 'favorites', label: 'Favorites', icon: Heart },
+            ].map((filter) => (
+              <Button
+                key={filter.id}
+                variant={activeFilter === filter.id ? "default" : "outline"}
+                size="sm"
+                onClick={() => setActiveFilter(filter.id as FilterType)}
+                className="flex items-center gap-2"
+              >
+                <filter.icon className="h-4 w-4" />
+                {filter.label}
+                <Badge variant="secondary" className="ml-1">
+                  {getFilteredCount(filter.id as FilterType)}
+                </Badge>
+                {activeFilter === filter.id && filter.id !== 'all' && (
+                  <X 
+                    className="h-3 w-3 ml-1 cursor-pointer" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveFilter('all');
+                    }}
+                  />
+                )}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        {/* Search Results Info */}
+        {searchQuery && (
+          <div className="mb-4">
+            <p className="text-sm text-muted-foreground">
+              {filteredArticles.length} result{filteredArticles.length !== 1 ? 's' : ''} found for "{searchQuery}"
+            </p>
+          </div>
+        )}
+
+        {filteredArticles.length === 0 ? (
           <Card className="text-center py-12">
             <CardContent>
               <BookOpen className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-              <h3 className="text-xl font-semibold mb-2">No articles yet</h3>
+              <h3 className="text-xl font-semibold mb-2">
+                {searchQuery ? 'No articles found' :
+                 activeFilter === 'all' ? 'No articles yet' : 
+                 activeFilter === 'my-articles' ? 'No articles published yet' :
+                 'No favorite articles yet'}
+              </h3>
               <p className="text-muted-foreground mb-4">
-                Be the first to publish an article on WriteStream!
+                {searchQuery ? `Try searching with different keywords or clear your search.` :
+                 activeFilter === 'all' ? 'Be the first to publish an article on WriteStream!' :
+                 activeFilter === 'my-articles' ? 'Start by publishing your first article.' :
+                 'Add articles to your favorites by clicking the heart icon.'}
               </p>
-              <Link to="/publish">
-                <Button>
-                  <PenTool className="mr-2 h-4 w-4" />
-                  Publish Article
+              {searchQuery ? (
+                <Button onClick={() => setSearchQuery('')}>
+                  <X className="mr-2 h-4 w-4" />
+                  Clear Search
                 </Button>
-              </Link>
+              ) : (
+                <>
+                  {(activeFilter === 'all' || activeFilter === 'my-articles') && (
+                    <Link to="/publish">
+                      <Button>
+                        <PenTool className="mr-2 h-4 w-4" />
+                        Publish Article
+                      </Button>
+                    </Link>
+                  )}
+                  {activeFilter === 'favorites' && (
+                    <Button onClick={() => setActiveFilter('all')}>
+                      <BookOpen className="mr-2 h-4 w-4" />
+                      Browse All Articles
+                    </Button>
+                  )}
+                </>
+              )}
             </CardContent>
           </Card>
         ) : (
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {articles.map((article) => {
+            {filteredArticles.map((article) => {
               const hasAccess = accessMap[article.id.toString()];
               const articleId = article.id.toString();
               const isAuthor = article.author.toLowerCase() === account?.toLowerCase();
               const isFree = article.price === 0n;
               const description = descriptionsMap[articleId] || '';
+              const isReacting = reactingArticles.has(articleId);
+              const isFavoriting = favoriteArticles.has(articleId);
               
               return (
                 <Card 
                   key={articleId} 
                   className="overflow-hidden cursor-pointer hover:shadow-lg transition-all duration-200 hover:scale-[1.02] flex flex-col h-full"
-                  onClick={() => navigate(`/article/${articleId}`)}
+                  onClick={() => handleArticleClick(articleId)}
                 >
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between mb-2">
@@ -273,6 +674,20 @@ export default function Articles() {
                             Yours
                           </Badge>
                         )}
+                        {/* Favorite Button */}
+                        {!isAuthor && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => handleFavorite(articleId, e)}
+                            disabled={isFavoriting}
+                            className="p-1 h-6 w-6"
+                          >
+                            <Heart 
+                              className={`h-3 w-3 ${article.isFavorited ? 'fill-red-500 text-red-500' : 'text-muted-foreground'}`} 
+                            />
+                          </Button>
+                        )}
                       </div>
                     </div>
                     
@@ -293,21 +708,56 @@ export default function Articles() {
                       </p>
                     </div>
 
-                    {/* Stats */}
+                    {/* Stats - All in one line with consistent styling */}
                     <div className="flex items-center justify-between mb-4 text-xs text-muted-foreground">
                       <div className="flex items-center gap-3">
-                        <div className="flex items-center gap-1">
-                          <ThumbsUp className="h-3 w-3" />
-                          <span>{article.upvotes.toString()}</span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <ThumbsDown className="h-3 w-3" />
-                          <span>{article.downvotes.toString()}</span>
-                        </div>
+                        {!isAuthor ? (
+                          <>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => handleLike(articleId, e)}
+                              disabled={isReacting}
+                              className={`p-1 h-6 flex items-center gap-1 ${
+                                article.userReaction.reaction_type === 'like' 
+                                  ? 'text-blue-600 bg-blue-50 dark:bg-blue-950' 
+                                  : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              <ThumbsUp className="h-3 w-3" />
+                              <span className="text-xs">{article.analytics.total_likes}</span>
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={(e) => handleDislike(articleId, e)}
+                              disabled={isReacting}
+                              className={`p-1 h-6 flex items-center gap-1 ${
+                                article.userReaction.reaction_type === 'dislike' 
+                                  ? 'text-red-600 bg-red-50 dark:bg-red-950' 
+                                  : 'text-muted-foreground hover:text-foreground'
+                              }`}
+                            >
+                              <ThumbsDown className="h-3 w-3" />
+                              <span className="text-xs">{article.analytics.total_dislikes}</span>
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-1">
+                              <ThumbsUp className="h-3 w-3" />
+                              <span>{article.analytics.total_likes}</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <ThumbsDown className="h-3 w-3" />
+                              <span>{article.analytics.total_dislikes}</span>
+                            </div>
+                          </>
+                        )}
                       </div>
                       <div className="flex items-center gap-1">
                         <Eye className="h-3 w-3" />
-                        <span>View</span>
+                        <span>{article.analytics.total_views}</span>
                       </div>
                     </div>
 
@@ -322,7 +772,7 @@ export default function Articles() {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              navigate(`/article/${articleId}`);
+                              handleArticleClick(articleId);
                             }}
                           >
                             <Gift className="mr-2 h-3 w-3" />
@@ -345,7 +795,7 @@ export default function Articles() {
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              navigate(`/article/${articleId}`);
+                              handleArticleClick(articleId);
                             }}
                           >
                             <Eye className="mr-2 h-3 w-3" />
