@@ -40,8 +40,8 @@ interface UserProfileContextType {
 
 const UserProfileContext = createContext<UserProfileContextType | undefined>(undefined);
 
-const API_BASE_URL = 'http://localhost:8000/api';
-// const API_BASE_URL = 'https://writestreamserver.onrender.com/api';
+// const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = 'https://writestreamserver.onrender.com/api';
 
 export function UserProfileProvider({ children }: { children: ReactNode }) {
   const { account, isConnected } = useWallet();

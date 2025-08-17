@@ -98,14 +98,14 @@ export default function PublishArticle() {
       const descriptionBlob = new Blob([description], { type: "text/plain" });
       formData.append("file", descriptionBlob, "description.txt");
 
-      // const res = await fetch("https://writestreamserver.onrender.com/upload/", {
-      //   method: "POST",
-      //   body: formData,
-      // });
-      const res = await fetch("http://localhost:8000/upload/", {
+      const res = await fetch("https://writestreamserver.onrender.com/upload/", {
         method: "POST",
         body: formData,
       });
+      // const res = await fetch("http://localhost:8000/upload/", {
+      //   method: "POST",
+      //   body: formData,
+      // });
       const data = await res.json();
       const ipfsHash = data.IpfsHash || data.Ipfs_Cid || data.Hash || data.IpfsCid;
 

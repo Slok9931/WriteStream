@@ -10,7 +10,11 @@ async function uploadToIPFS(content) {
   formData.append("file", blob, "article.txt");
 
   try {
-    const response = await fetch("http://localhost:8000/upload/", {
+    // const response = await fetch("http://localhost:8000/upload/", {
+    //   method: "POST",
+    //   body: formData,
+    // });
+    const response = await fetch("https://writestreamserver.onrender.com/upload/", {
       method: "POST",
       body: formData,
     });
