@@ -148,6 +148,10 @@ def get_db():
         raise HTTPException(status_code=500, detail=f"Database connection failed: {str(e)}")
 
 # Health check endpoint
+@app.get("/")
+async def root():
+    return {"message": "WriteStream API is running!", "status": "healthy"}
+
 @app.get("/health")
 async def health_check():
     try:
@@ -508,6 +512,9 @@ async def get_user_articles(user_wallet: str):
 @app.on_event("startup")
 async def startup_event():
     print("Starting WriteStream server...")
+    print(f"PORT environment variable: {os.getenv('PORT', 'Not set')}")
+    print(f"MONGODB_URL set: {bool(MONGODB_URL)}")
+    print(f"PINATA_API_KEY set: {bool(PINATA_API_KEY)}")
     
     # Initialize MongoDB
     mongodb_initialized = initialize_mongodb()
@@ -536,6 +543,9 @@ async def startup_event():
     else:
         print("Server started without MongoDB connection. Some features may not work.")
 
+# Use Render's PORT environment variable
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    print(f"Starting server on 0.0.0.0:{port}")
+    uvicorn.run(app, host="0.0.0.0", port=port)
