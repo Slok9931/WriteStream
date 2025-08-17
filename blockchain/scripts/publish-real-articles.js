@@ -14,7 +14,7 @@ async function uploadToIPFS(content) {
     //   method: "POST",
     //   body: formData,
     // });
-    const response = await fetch("https://writestreamserver.onrender.com/upload/", {
+    const response = await fetch("https://write-stream-server.onrender.com/upload/", {
       method: "POST",
       body: formData,
     });

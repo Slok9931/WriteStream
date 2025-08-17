@@ -98,7 +98,7 @@ export default function PublishArticle() {
       const descriptionBlob = new Blob([description], { type: "text/plain" });
       formData.append("file", descriptionBlob, "description.txt");
 
-      const res = await fetch("https://writestreamserver.onrender.com/upload/", {
+      const res = await fetch("https://write-stream-server.onrender.com/upload/", {
         method: "POST",
         body: formData,
       });
