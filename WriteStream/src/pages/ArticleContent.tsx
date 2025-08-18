@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useToast } from '@/hooks/use-toast';
 import { Link } from 'react-router-dom';
-import { BookOpen, Heart, ShoppingCart, PenTool, LogOut, Wallet, ThumbsUp, ThumbsDown, ArrowLeft, Gift, Lock } from 'lucide-react';
+import { BookOpen, Heart, ShoppingCart, PenTool, LogOut, ThumbsUp, ThumbsDown, ArrowLeft, Gift, Lock, Eye } from 'lucide-react';
 import { ethers } from 'ethers';
 import FullPageLoader from '@/components/FullPageLoader';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -23,19 +23,50 @@ interface Article {
   downvotes: bigint;
 }
 
+interface ArticleAnalytics {
+  total_likes: number;
+  total_dislikes: number;
+  total_views: number;
+}
+
+interface UserReaction {
+  has_reacted: boolean;
+  reaction_type: 'like' | 'dislike' | null;
+}
+
 export default function ArticleContent() {
   const { articleId } = useParams<{ articleId: string }>();
   const navigate = useNavigate();
   const { account, contract, disconnectWallet } = useWallet();
-  const { profile } = useUserProfile();
+  const { 
+    profile,
+    recordView,
+    likeArticle,
+    dislikeArticle,
+    removeReaction,
+    getUserReaction,
+    getArticleAnalytics,
+    addToFavorites,
+    removeFromFavorites,
+    isArticleFavorited
+  } = useUserProfile();
   const [article, setArticle] = useState<Article | null>(null);
   const [articleContent, setArticleContent] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [hasAccess, setHasAccess] = useState(false);
-  const [hasVoted, setHasVoted] = useState(false);
-  const [userVote, setUserVote] = useState<boolean | null>(null);
   const [isPurchasing, setIsPurchasing] = useState(false);
-  const [isVoting, setIsVoting] = useState(false);
+  const [analytics, setAnalytics] = useState<ArticleAnalytics>({
+    total_likes: 0,
+    total_dislikes: 0,
+    total_views: 0
+  });
+  const [userReaction, setUserReaction] = useState<UserReaction>({
+    has_reacted: false,
+    reaction_type: null
+  });
+  const [isFavorited, setIsFavorited] = useState(false);
+  const [isReacting, setIsReacting] = useState(false);
+  const [isFavoriting, setIsFavoriting] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -51,7 +82,6 @@ export default function ArticleContent() {
       setLoading(true);
       const articleData = await contract.articles(articleId);
       const access = await contract.checkAccess(articleId, account);
-      const voted = await contract.hasUserVoted(articleId, account);
       const isAuthor = articleData.author.toLowerCase() === account.toLowerCase();
       const isFree = articleData.price === 0n;
       
@@ -67,12 +97,20 @@ export default function ArticleContent() {
       
       // Free articles are accessible to everyone, paid articles require purchase
       setHasAccess(access || isAuthor || isFree);
-      setHasVoted(voted);
       
-      if (voted) {
-        const vote = await contract.getUserVote(articleId, account);
-        setUserVote(vote);
-      }
+      // Load analytics, user reaction, and favorite status
+      const [analyticsData, reactionData, favoritedStatus] = await Promise.all([
+        getArticleAnalytics(Number(articleId)),
+        getUserReaction(Number(articleId)),
+        isArticleFavorited(Number(articleId))
+      ]);
+      
+      setAnalytics(analyticsData);
+      setUserReaction(reactionData);
+      setIsFavorited(favoritedStatus);
+      
+      // Record view
+      await recordView(Number(articleId));
       
       if (access || isAuthor || isFree) {
         await loadArticleContent(articleData.ipfsHash);
@@ -128,39 +166,110 @@ export default function ArticleContent() {
     }
   };
 
-  const voteArticle = async (isUpvote: boolean) => {
-    if (!contract || !article) return;
-    setIsVoting(true);
+  const handleLike = async () => {
+    if (!articleId) return;
+    setIsReacting(true);
+    
     try {
-      const tx = await contract.voteArticle(article.id, isUpvote);
-      toast({
-        title: "Submitting vote...",
-        description: "Waiting for transaction confirmation.",
-      });
-      await tx.wait();
-
-      toast({
-        title: "Vote submitted!",
-        description: `Your ${isUpvote ? 'upvote' : 'downvote'} has been recorded.`,
-      });
-
-      setHasVoted(true);
-      setUserVote(isUpvote);
-      
-      // Update vote counts
-      if (isUpvote) {
-        setArticle(prev => prev ? { ...prev, upvotes: prev.upvotes + 1n } : null);
+      let result;
+      if (userReaction.has_reacted && userReaction.reaction_type === 'like') {
+        result = await removeReaction(Number(articleId));
+        setUserReaction({ has_reacted: false, reaction_type: null });
+        toast({
+          title: "Like removed",
+          description: "Your reaction has been updated.",
+        });
       } else {
-        setArticle(prev => prev ? { ...prev, downvotes: prev.downvotes + 1n } : null);
+        result = await likeArticle(Number(articleId));
+        setUserReaction({ has_reacted: true, reaction_type: 'like' });
+        toast({
+          title: "Article liked",
+          description: "Your reaction has been updated.",
+        });
       }
-    } catch (error: any) {
+
+      setAnalytics({
+        ...analytics,
+        total_likes: result.likes,
+        total_dislikes: result.dislikes
+      });
+    } catch (error) {
       toast({
-        title: "Vote failed",
-        description: error.message,
+        title: "Failed to update reaction",
+        description: "Please try again.",
         variant: "destructive",
       });
     } finally {
-      setIsVoting(false);
+      setIsReacting(false);
+    }
+  };
+
+  const handleDislike = async () => {
+    if (!articleId) return;
+    setIsReacting(true);
+    
+    try {
+      let result;
+      if (userReaction.has_reacted && userReaction.reaction_type === 'dislike') {
+        result = await removeReaction(Number(articleId));
+        setUserReaction({ has_reacted: false, reaction_type: null });
+        toast({
+          title: "Dislike removed",
+          description: "Your reaction has been updated.",
+        });
+      } else {
+        result = await dislikeArticle(Number(articleId));
+        setUserReaction({ has_reacted: true, reaction_type: 'dislike' });
+        toast({
+          title: "Article disliked",
+          description: "Your reaction has been updated.",
+        });
+      }
+
+      setAnalytics({
+        ...analytics,
+        total_likes: result.likes,
+        total_dislikes: result.dislikes
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to update reaction",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsReacting(false);
+    }
+  };
+
+  const handleFavorite = async () => {
+    if (!articleId || !article) return;
+    setIsFavoriting(true);
+    
+    try {
+      if (isFavorited) {
+        await removeFromFavorites(Number(articleId));
+        setIsFavorited(false);
+        toast({
+          title: "Removed from favorites",
+          description: "Article removed from your favorites.",
+        });
+      } else {
+        await addToFavorites(Number(articleId), article.title);
+        setIsFavorited(true);
+        toast({
+          title: "Added to favorites",
+          description: "Article added to your favorites.",
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Failed to update favorites",
+        description: "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsFavoriting(false);
     }
   };
 
@@ -254,6 +363,12 @@ export default function ArticleContent() {
                     </Badge>
                   )}
                   
+                  {hasAccess && !isFree && (
+                    <Badge variant="secondary" className="text-xs">
+                      Purchased
+                    </Badge>
+                  )}
+                  
                   {isAuthor && (
                     <Badge variant="outline" className="text-xs">
                       Your Article
@@ -265,38 +380,89 @@ export default function ArticleContent() {
                   by {article.author.slice(0, 6)}...{article.author.slice(-4)}
                 </p>
               </div>
+              
+              {/* Favorite Button - Only for non-authors */}
+              {!isAuthor && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleFavorite}
+                  disabled={isFavoriting}
+                  className="ml-4"
+                >
+                  <Heart 
+                    className={`h-5 w-5 ${isFavorited ? 'fill-red-500 text-red-500' : 'text-muted-foreground'}`} 
+                  />
+                </Button>
+              )}
             </div>
 
-            {/* Vote Section - For non-authors who have access (free articles or purchased paid articles) */}
-            {hasAccess && !isAuthor && (
-              <div className="flex items-center gap-4 mb-4">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant={userVote === true ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => voteArticle(true)}
-                    disabled={hasVoted || isVoting}
-                  >
-                    <ThumbsUp className="mr-2 h-4 w-4" />
-                    {article.upvotes.toString()}
-                  </Button>
-                  <Button
-                    variant={userVote === false ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => voteArticle(false)}
-                    disabled={hasVoted || isVoting}
-                  >
-                    <ThumbsDown className="mr-2 h-4 w-4" />
-                    {article.downvotes.toString()}
-                  </Button>
-                  {hasVoted && (
-                    <Badge variant="outline" className="text-xs">
-                      You voted {userVote ? 'up' : 'down'}
-                    </Badge>
-                  )}
+            {/* Analytics Section - Show for everyone who has access */}
+            {(hasAccess || isAuthor) && (
+              <div className="mb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    {!isAuthor ? (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleLike}
+                          disabled={isReacting}
+                          className={`flex items-center gap-2 ${
+                            userReaction.reaction_type === 'like' 
+                              ? 'text-blue-600 bg-blue-50 dark:bg-blue-950' 
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          <ThumbsUp className="h-4 w-4" />
+                          <span>{analytics.total_likes}</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleDislike}
+                          disabled={isReacting}
+                          className={`flex items-center gap-2 ${
+                            userReaction.reaction_type === 'dislike' 
+                              ? 'text-red-600 bg-red-50 dark:bg-red-950' 
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          <ThumbsDown className="h-4 w-4" />
+                          <span>{analytics.total_dislikes}</span>
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <ThumbsUp className="h-4 w-4" />
+                          <span>{analytics.total_likes}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <ThumbsDown className="h-4 w-4" />
+                          <span>{analytics.total_dislikes}</span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Eye className="h-4 w-4" />
+                    <span>{analytics.total_views}</span>
+                  </div>
                 </div>
+                
+                {userReaction.has_reacted && !isAuthor && (
+                  <div className="mt-2">
+                    <Badge variant="outline" className="text-xs">
+                      You {userReaction.reaction_type === 'like' ? 'liked' : 'disliked'} this article
+                    </Badge>
+                  </div>
+                )}
               </div>
             )}
+            
             <div className='w-full mx-auto bg-muted-foreground/30 h-[2px]'></div>
           </CardHeader>
           
@@ -422,7 +588,7 @@ export default function ArticleContent() {
                 <BookOpen className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
                 <h3 className="text-xl font-semibold mb-2">Purchase to read</h3>
                 <p className="text-muted-foreground mb-6">
-                  Purchase this article to read the full content and vote on it.
+                  Purchase this article to read the full content and interact with it.
                 </p>
                 <Button
                   size="lg"
